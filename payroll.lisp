@@ -17,8 +17,14 @@
    (rate :initarg :rate
          :accessor rate)))
 
+(defclass salaried-classification ()
+  ((salary :initarg :salary
+           :accessor salary)))
+
 (defclass hold-method () ())
+
 (defclass bi-weekly-schedule () ())
+(defclass monthly-schedule () ())
 
 (defmethod payment-classification (&optional (db *db*))
   (classification db))
@@ -29,6 +35,14 @@
 
 (defun change-commissioned (salary rate &optional (db *db*))
   (db-change-commissioned salary rate db))
+
+(defun change-salaried (salary &optional (db *db*))
+  (db-change-salaried salary db))
+
+(defmethod db-change-salaried (salary (db memory-db))
+  (setf (classification db) (make-instance 'salaried-classification
+                                           :salary salary))
+  (setf (schedule db) (make-instance 'monthly-schedule)))
 
 (defmethod db-change-commissioned (salary rate (db memory-db))
   (setf (classification db) (make-instance 'commissioned-classification
@@ -49,6 +63,13 @@
                 (class-name (class-of (payment-method))))
     (assert-eql 'payroll::bi-weekly-schedule
                 (class-name (class-of (payment-schedule))))))
+
+(define-test creating-salaried-employee
+  (let ((*db* (make-instance 'memory-db)))
+    (change-salaried 1111.0)
+    (assert-equal 1111.0 (salary (payment-classification)))
+    (assert-equal 'PAYROLL::MONTHLY-SCHEDULE
+                  (class-name (class-of (payment-schedule))))))
 
 (let ((*print-failures* t)
       (*print-errors* t))
