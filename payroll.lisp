@@ -17,6 +17,10 @@
    (rate :initarg :rate
          :accessor rate)))
 
+(defclass hourly-classification ()
+  ((rate :initarg :hourly-rate
+         :accessor hourly-rate)))
+
 (defclass salaried-classification ()
   ((salary :initarg :salary
            :accessor salary)))
@@ -25,6 +29,7 @@
 
 (defclass bi-weekly-schedule () ())
 (defclass monthly-schedule () ())
+(defclass weekly-schedule () ())
 
 (defmethod payment-classification (&optional (db *db*))
   (classification db))
@@ -39,6 +44,9 @@
 (defun change-salaried (salary &optional (db *db*))
   (db-change-salaried salary db))
 
+(defun change-hourly (rate &optional (db *db*))
+  (db-change-hourly rate db))
+
 (defmethod db-change-salaried (salary (db memory-db))
   (setf (classification db) (make-instance 'salaried-classification
                                            :salary salary))
@@ -49,6 +57,11 @@
                                            :salary salary
                                            :rate rate))
   (setf (schedule db) (make-instance 'bi-weekly-schedule)))
+
+(defmethod db-change-hourly (rate (db memory-db))
+  (setf (classification db) (make-instance 'hourly-classification
+                                           :hourly-rate rate))
+  (setf (schedule db) (make-instance 'weekly-schedule)))
 
 
 (remove-tests :all)
@@ -68,8 +81,15 @@
   (let ((*db* (make-instance 'memory-db)))
     (change-salaried 1111.0)
     (assert-equal 1111.0 (salary (payment-classification)))
-    (assert-equal 'PAYROLL::MONTHLY-SCHEDULE
-                  (class-name (class-of (payment-schedule))))))
+    (assert-eql 'PAYROLL::MONTHLY-SCHEDULE
+                (class-name (class-of (payment-schedule))))))
+
+(define-test creating-hourly-employee
+  (let ((*db* (make-instance 'memory-db)))
+    (change-hourly 17.5)
+    (assert-equal 17.5 (hourly-rate (payment-classification)))
+    (assert-eql 'payroll::weekly-schedule
+                (class-name (class-of (payment-schedule))))))
 
 (let ((*print-failures* t)
       (*print-errors* t))
