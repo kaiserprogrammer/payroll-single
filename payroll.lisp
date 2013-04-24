@@ -5,6 +5,12 @@
 
 (defvar *db*)
 
+(defclass sale ()
+  ((date :initarg :date
+         :reader date)
+   (amount :initarg :amount
+           :reader amount)))
+
 (defclass memory-db ()
   ((classification :accessor classification)
    (method :accessor pay-method
@@ -15,7 +21,9 @@
   ((salary :initarg :salary
            :accessor salary)
    (rate :initarg :rate
-         :accessor rate)))
+         :accessor rate)
+   (sales :initform (list)
+          :accessor sales-receipts)))
 
 (defclass hourly-classification ()
   ((rate :initarg :hourly-rate
@@ -46,6 +54,13 @@
 
 (defun change-hourly (rate &optional (db *db*))
   (db-change-hourly rate db))
+
+(defun add-sales-receipt (date amount &optional (db *db*))
+  (db-add-sale (make-instance 'sale :date date :amount amount)
+               db))
+
+(defmethod db-add-sale ((sale sale) (db memory-db))
+  (push sale (sales-receipts (payment-classification db))))
 
 (defmethod db-change-salaried (salary (db memory-db))
   (setf (classification db) (make-instance 'salaried-classification
@@ -90,6 +105,16 @@
     (assert-equal 17.5 (hourly-rate (payment-classification)))
     (assert-eql 'payroll::weekly-schedule
                 (class-name (class-of (payment-schedule))))))
+
+(define-test adding-sales-receipts
+  (let ((*db* (make-instance 'memory-db))
+        (date (local-time:parse-timestring "2012-12-1")))
+    (change-commissioned 350 5.0)
+    (add-sales-receipt date 500.0)
+    (let ((sales (sales-receipts (payment-classification))))
+      (assert-true sales)
+      (assert-equal 500.0 (amount (first sales)))
+      (assert-equality #'local-time:timestamp= date (date (first sales))))))
 
 (let ((*print-failures* t)
       (*print-errors* t))
