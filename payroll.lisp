@@ -74,6 +74,14 @@
   (db-add-timecard (make-instance 'timecard :date date :hours hours)
                    db))
 
+(defun delete-employee (&optional (db *db*))
+  (db-delete-employee db))
+
+(defmethod db-delete-employee ((db memory-db))
+  (setf (classification db) nil)
+  (setf (pay-method db) nil)
+  (setf (schedule db) nil))
+
 (defmethod db-add-timecard (tc (db memory-db))
   (setf (gethash (date tc) (timecards (payment-classification db))) tc))
 
@@ -142,6 +150,14 @@
     (let ((tc (timecard (payment-classification) date)))
       (assert-equal 8.0 (hours tc))
       (assert-equality #'local-time:timestamp= date (date tc)))))
+
+(define-test deleting-an-employee
+  (let ((*db* (make-instance 'memory-db)))
+    (change-salaried 2222.0)
+    (delete-employee)
+    (assert-eq nil (payment-classification))
+    (assert-eq nil (payment-schedule))
+    (assert-eq nil (payment-method))))
 
 (let ((*print-failures* t)
       (*print-errors* t))
