@@ -17,11 +17,18 @@
    (hours :initarg :hours
           :reader hours)))
 
+(defclass no-affiliation () ())
+(defclass affiliation ()
+  ((dues :initarg :dues
+         :accessor dues)))
+
 (defclass memory-db ()
   ((classification :accessor classification)
    (method :accessor pay-method
            :initform (make-instance 'hold-method))
-   (schedule :accessor schedule)))
+   (schedule :accessor schedule)
+   (affiliation :initform (make-instance 'no-affiliation)
+                :accessor affiliation)))
 
 (defclass commissioned-classification ()
   ((salary :initarg :salary
@@ -76,6 +83,15 @@
 
 (defun delete-employee (&optional (db *db*))
   (db-delete-employee db))
+
+(defun change-union-member (dues &optional (db *db*))
+  (db-change-affiliation (make-instance 'affiliation :dues dues) db))
+
+(defun change-unaffiliated (&optional (db *db*))
+  (db-change-affiliation (make-instance 'no-affiliation) db))
+
+(defmethod db-change-affiliation (af (db memory-db))
+  (setf (affiliation db) af))
 
 (defmethod db-delete-employee ((db memory-db))
   (setf (classification db) nil)
@@ -158,6 +174,14 @@
     (assert-eq nil (payment-classification))
     (assert-eq nil (payment-schedule))
     (assert-eq nil (payment-method))))
+
+(define-test change-union-member
+  (let ((*db* (make-instance 'memory-db)))
+    (change-union-member 99.42)
+    (assert-equal 99.42 (dues (affiliation *db*)))
+    (change-unaffiliated)
+    (assert-eql 'payroll::no-affiliation
+                (class-name (class-of (affiliation *db*))))))
 
 (let ((*print-failures* t)
       (*print-errors* t))
