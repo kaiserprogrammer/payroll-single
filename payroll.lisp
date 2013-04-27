@@ -5,6 +5,16 @@
 
 (defvar *db*)
 
+(defclass paycheck ()
+  ((pay-date :initarg :pay-date
+             :reader pay-date)
+   (start-date :initarg :start-date
+               :accessor start-date)
+   (net-pay :accessor net-pay)
+   (gross-pay :accessor gross-pay)
+   (deductions :accessor deductions)
+   (disposition :accessor disposition)))
+
 (defclass sale ()
   ((date :initarg :date
          :reader date)
@@ -59,7 +69,9 @@
   ((salary :initarg :salary
            :accessor salary)))
 
-(defclass hold-method () ())
+(defclass hold-method ()
+  ((disposition :initform "Hold"
+                :accessor disposition)))
 
 (defclass bi-weekly-schedule () ())
 (defclass monthly-schedule () ())
@@ -113,6 +125,33 @@
                                         :date date
                                         :charge charge)
                          db))
+
+(defmethod payday? (date (schedule monthly-schedule))
+  (last-day-of-month? date))
+
+(defun last-day-of-month? (date)
+  (= (timestamp-month (timestamp+ date 1 :month))
+     (timestamp-month (timestamp+ date 1 :day))))
+
+(defmethod get-pay-period-start-date (date (schedule monthly-schedule)))
+(defmethod calculate-pay ((pc paycheck) (cls salaried-classification))
+  (setf (gross-pay pc) (salary cls)))
+
+(defmethod calculate-deductions ((pc paycheck) (af no-affiliation))
+  (setf (deductions pc) 0))
+
+(defun payday (date &optional (db *db*))
+  (let ((schedule (payment-schedule db)))
+    (when (payday? date schedule)
+      (let* ((start-date (get-pay-period-start-date date schedule))
+             (pc (make-instance 'paycheck
+                                :start-date start-date
+                                :pay-date date)))
+        (calculate-pay pc (payment-classification db))
+        (calculate-deductions pc (affiliation db))
+        (setf (disposition pc) (disposition (payment-method db)))
+        (setf (net-pay pc) (- (gross-pay pc) (deductions pc)))
+        pc))))
 
 (defmethod db-add-service-charge (sc (db memory-db))
   (push (cons (date sc) sc) (charges (affiliation db))))
@@ -223,6 +262,20 @@
       (assert-true sc)
       (assert-equal 12.95 (charge sc))
       (assert-equality #'timestamp= date (date sc)))))
+
+(define-test paying-a-single-salaried-employee
+  (let ((*db* (make-instance 'memory-db))
+        (pay-date (parse-timestring "2012-11-30")))
+    (change-salaried 2250.0)
+    (let ((pc (payday pay-date)))
+      (assert-equality #'timestamp= pay-date (pay-date pc))
+      (assert-equality #'timestamp=
+                       (parse-timestring "2012-11-1")
+                       (start-date pc))
+      (assert-equal 2250.0 (gross-pay pc))
+      (assert-equal "Hold" (disposition pc))
+      (assert-equal 0 (deductions pc))
+      (assert-equal 2250.0 (net-pay pc)))))
 
 (let ((*print-failures* t)
       (*print-errors* t))
