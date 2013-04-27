@@ -1,5 +1,5 @@
 (defpackage :payroll
-  (:use :cl :lisp-unit))
+  (:use :cl :lisp-unit :local-time))
 
 (in-package :payroll)
 
@@ -49,11 +49,11 @@
 (defclass hourly-classification ()
   ((rate :initarg :hourly-rate
          :accessor hourly-rate)
-   (timecards :initform (make-hash-table :test #'equalp)
-              :reader timecards)))
+   (timecards :initform (list)
+              :accessor timecards)))
 
-(defmethod timecard ((pc hourly-classification) (d local-time:timestamp))
-  (gethash d (timecards pc)))
+(defmethod timecard ((pc hourly-classification) (d timestamp))
+  (cdr (assoc d (timecards pc) :test #'timestamp=)))
 
 (defclass salaried-classification ()
   ((salary :initarg :salary
@@ -116,7 +116,7 @@
   (setf (schedule db) nil))
 
 (defmethod db-add-timecard (tc (db memory-db))
-  (setf (gethash (date tc) (timecards (payment-classification db))) tc))
+  (push (cons (date tc) tc) (timecards (payment-classification db))))
 
 (defmethod db-add-sale ((sale sale) (db memory-db))
   (push sale (sales-receipts (payment-classification db))))
@@ -167,22 +167,22 @@
 
 (define-test adding-sales-receipts
   (let ((*db* (make-instance 'memory-db))
-        (date (local-time:parse-timestring "2012-12-1")))
+        (date (parse-timestring "2012-12-1")))
     (change-commissioned 350 5.0)
     (add-sales-receipt date 500.0)
     (let ((sales (sales-receipts (payment-classification))))
       (assert-true sales)
       (assert-equal 500.0 (amount (first sales)))
-      (assert-equality #'local-time:timestamp= date (date (first sales))))))
+      (assert-equality #'timestamp= date (date (first sales))))))
 
 (define-test adding-time-cards
   (let ((*db* (make-instance 'memory-db))
-        (date (local-time:parse-timestring "2012-12-31")))
+        (date (parse-timestring "2012-12-31")))
     (change-hourly 12.75)
     (add-timecard date 8.0)
     (let ((tc (timecard (payment-classification) date)))
       (assert-equal 8.0 (hours tc))
-      (assert-equality #'local-time:timestamp= date (date tc)))))
+      (assert-equality #'timestamp= date (date tc)))))
 
 (define-test deleting-an-employee
   (let ((*db* (make-instance 'memory-db)))
@@ -202,13 +202,13 @@
 
 (define-test adding-a-service-charge
   (let ((*db* (make-instance 'memory-db))
-        (date (local-time:parse-timestring "2012-12-31")))
+        (date (parse-timestring "2012-12-31")))
     (change-union-member 10.0)
     (add-service-charge date 12.95)
-    (let ((sc (cdr (assoc date (charges (affiliation *db*)) :test #'local-time:timestamp=))))
+    (let ((sc (cdr (assoc date (charges (affiliation *db*)) :test #'timestamp=))))
       (assert-true sc)
       (assert-equal 12.95 (charge sc))
-      (assert-equality #'local-time:timestamp= date (date sc)))))
+      (assert-equality #'timestamp= date (date sc)))))
 
 (let ((*print-failures* t)
       (*print-errors* t))
