@@ -132,6 +132,9 @@
 (defmethod payday? (date (schedule weekly-schedule))
   (last-day-of-week? date))
 
+(defmethod payday? (date (schedule bi-weekly-schedule))
+  (and (last-day-of-week? date) (oddp (truncate (/ (local-time:timestamp-to-universal date) (* 60 60 24 7))))))
+
 (defun last-day-of-week? (date)
   (= 5
      (timestamp-day-of-week date)))
@@ -153,8 +156,20 @@
 (defmethod get-pay-period-start-date (date (schedule weekly-schedule))
   (first-day-of-week date))
 
+(defmethod get-pay-period-start-date (date (s bi-weekly-schedule))
+  (timestamp- (first-day-of-week date) 7 :day))
+
 (defmethod calculate-pay ((pc paycheck) (cls salaried-classification))
   (setf (gross-pay pc) (salary cls)))
+(defmethod calculate-pay ((pc paycheck) (cls commissioned-classification))
+  (setf (gross-pay pc) (+ (salary cls)
+                          (* (/ (rate cls) 100)
+                             (reduce #'+
+                                     (mapcar #'amount
+                                             (remove-if (lambda (tc)
+                                                          (or (timestamp> (date tc) (pay-date pc))
+                                                              (timestamp< (date tc) (start-date pc))))
+                                                        (sales-receipts cls))))))))
 (defmethod calculate-pay ((pc paycheck) (cls hourly-classification))
   (setf (gross-pay pc) (* (hourly-rate cls)
                           (reduce #'+ (let ((hours
@@ -370,6 +385,28 @@
     (let ((pc (payday pay-date)))
       (assert-equalp 25.0 (gross-pay pc))
       (assert-equalp 25.0 (net-pay pc)))))
+
+(define-test pay-with-no-commission
+  (let ((*db* (make-instance 'memory-db)))
+    (change-commissioned 1000.0 10)
+    (let ((pc (payday (parse-timestring "2001-11-30"))))
+      (assert-equalp 1000 (gross-pay pc))
+      (assert-equalp 1000 (net-pay pc)))))
+
+(define-test pay-with-one-sale-in-period
+  (let ((*db* (make-instance 'memory-db))
+        (pay-date (parse-timestring "2001-11-30")))
+    (change-commissioned 1000.0 10)
+    (add-sales-receipt pay-date 500)
+    (add-sales-receipt (timestamp- pay-date 14 :day) 1000)
+    (let ((pc (payday pay-date)))
+      (assert-equalp 1050.0 (gross-pay pc))
+      (assert-equalp 1050.0 (net-pay pc)))))
+
+(define-test no-pay-on-wrong-date-for-commissioned-employee
+  (let ((*db* (make-instance 'memory-db)))
+    (change-commissioned 1000. 10)
+    (assert-eq nil (payday (parse-timestring "2001-11-23")))))
 
 (let ((*print-failures* t)
       (*print-errors* t))
