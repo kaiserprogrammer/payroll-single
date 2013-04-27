@@ -73,13 +73,23 @@
   (pay-method db))
 
 (defun change-commissioned (salary rate &optional (db *db*))
-  (db-change-commissioned salary rate db))
+  (db-change-classification (make-instance 'commissioned-classification
+                                           :salary salary
+                                           :rate rate)
+                            (make-instance 'bi-weekly-schedule)
+                            db))
 
 (defun change-salaried (salary &optional (db *db*))
-  (db-change-salaried salary db))
+  (db-change-classification (make-instance 'salaried-classification
+                                           :salary salary)
+                            (make-instance 'monthly-schedule)
+                            db))
 
 (defun change-hourly (rate &optional (db *db*))
-  (db-change-hourly rate db))
+  (db-change-classification (make-instance 'hourly-classification
+                                           :hourly-rate rate)
+                            (make-instance 'weekly-schedule)
+                            db))
 
 (defun add-sales-receipt (date amount &optional (db *db*))
   (db-add-sale (make-instance 'sale :date date :amount amount)
@@ -120,6 +130,10 @@
 
 (defmethod db-add-sale ((sale sale) (db memory-db))
   (push sale (sales-receipts (payment-classification db))))
+
+(defmethod db-change-classification (classification schedule (db memory-db))
+  (setf (classification db) classification)
+  (setf (schedule db) schedule))
 
 (defmethod db-change-salaried (salary (db memory-db))
   (setf (classification db) (make-instance 'salaried-classification
