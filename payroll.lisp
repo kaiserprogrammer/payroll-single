@@ -187,6 +187,14 @@
 (defmethod calculate-deductions ((pc paycheck) (af no-affiliation))
   (setf (deductions pc) 0))
 
+(defmethod calculate-deductions ((pc paycheck) (af affiliation))
+  (setf (deductions pc) (+ (dues af)
+                           (reduce #'+ (mapcar #'charge
+                                               (remove-if (lambda (tc)
+                                                            (or (timestamp> (date tc) (pay-date pc))
+                                                                (timestamp< (date tc) (start-date pc))))
+                                                          (mapcar #'cdr (charges af))))))))
+
 (defun payday (date &optional (db *db*))
   (let ((schedule (payment-schedule db)))
     (when (payday? date schedule)
@@ -407,6 +415,32 @@
   (let ((*db* (make-instance 'memory-db)))
     (change-commissioned 1000. 10)
     (assert-eq nil (payday (parse-timestring "2001-11-23")))))
+
+(define-test deduct-service-charges
+  (let ((*db* (make-instance 'memory-db))
+        (pay-date (parse-timestring "2001-11-09")))
+    (change-hourly 12.5)
+    (add-timecard pay-date 8.0)
+    (change-union-member 80)
+    (add-service-charge pay-date 15)
+    (let ((pc (payday pay-date)))
+      (assert-equalp 100 (gross-pay pc))
+      (assert-equalp 95 (deductions pc))
+      (assert-equalp 5 (net-pay pc)))))
+
+(define-test deduct-service-charges-when-spanning-multiple-periods
+  (let ((*db* (make-instance 'memory-db))
+        (pay-date (parse-timestring "2001-11-09")))
+    (change-hourly 12.5)
+    (add-timecard pay-date 8.0)
+    (change-union-member 80)
+    (add-service-charge pay-date 15)
+    (add-service-charge (timestamp- pay-date 7 :day) 15)
+    (add-service-charge (timestamp+ pay-date 1 :day) 15)
+    (let ((pc (payday pay-date)))
+      (assert-equalp 100 (gross-pay pc))
+      (assert-equalp 95 (deductions pc))
+      (assert-equalp 5 (net-pay pc)))))
 
 (let ((*print-failures* t)
       (*print-errors* t))
