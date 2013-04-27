@@ -277,6 +277,11 @@
       (assert-equal 0 (deductions pc))
       (assert-equal 2250.0 (net-pay pc)))))
 
+(define-test not-paying-a-salaried-employee-on-wrong-date
+  (let ((*db* (make-instance 'memory-db)))
+    (change-salaried 2250.0)
+    (assert-eq nil (payday (parse-timestring "2012-11-29")))))
+
 (let ((*print-failures* t)
       (*print-errors* t))
   (run-tests :all))
