@@ -6,3 +6,4 @@ for a user must be setup prior to execution.
 ## Problems
 - memberId -> Member <-> Employee <- employeeId
   is not possible because the created context is an employee
+- Deleting Employees
