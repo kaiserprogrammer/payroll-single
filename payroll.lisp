@@ -129,13 +129,45 @@
 (defmethod payday? (date (schedule monthly-schedule))
   (last-day-of-month? date))
 
+(defmethod payday? (date (schedule weekly-schedule))
+  (last-day-of-week? date))
+
+(defun last-day-of-week? (date)
+  (= 5
+     (timestamp-day-of-week date)))
+
 (defun last-day-of-month? (date)
   (= (timestamp-month (timestamp+ date 1 :month))
      (timestamp-month (timestamp+ date 1 :day))))
 
-(defmethod get-pay-period-start-date (date (schedule monthly-schedule)))
+(defun first-day-of-month (date)
+  (timestamp- date (1- (timestamp-day date)) :day))
+
+(defun first-day-of-week (date)
+  (timestamp- date (1- (timestamp-day-of-week date)) :day))
+
+
+(defmethod get-pay-period-start-date (date (schedule monthly-schedule))
+  (first-day-of-month date))
+
+(defmethod get-pay-period-start-date (date (schedule weekly-schedule))
+  (first-day-of-week date))
+
 (defmethod calculate-pay ((pc paycheck) (cls salaried-classification))
   (setf (gross-pay pc) (salary cls)))
+(defmethod calculate-pay ((pc paycheck) (cls hourly-classification))
+  (setf (gross-pay pc) (* (hourly-rate cls)
+                          (reduce #'+ (let ((hours
+                                             (mapcar
+                                              #'hours
+                                              (remove-if (lambda (tc)
+                                                           (or (timestamp> (date tc) (pay-date pc))
+                                                               (timestamp< (date tc) (start-date pc))))
+                                                         (mapcar #'cdr (timecards cls))))))
+                                        (mapcar (lambda (hours) (if (> hours 8)
+                                                               (+ 8 (* 1.5 (- hours 8)))
+                                                               hours))
+                                                hours))))))
 
 (defmethod calculate-deductions ((pc paycheck) (af no-affiliation))
   (setf (deductions pc) 0))
@@ -270,8 +302,8 @@
     (let ((pc (payday pay-date)))
       (assert-equality #'timestamp= pay-date (pay-date pc))
       (assert-equality #'timestamp=
-                       (parse-timestring "2012-11-1")
-                       (start-date pc))
+                       (start-date pc)
+                       (parse-timestring "2012-11-1"))
       (assert-equal 2250.0 (gross-pay pc))
       (assert-equal "Hold" (disposition pc))
       (assert-equal 0 (deductions pc))
@@ -281,6 +313,63 @@
   (let ((*db* (make-instance 'memory-db)))
     (change-salaried 2250.0)
     (assert-eq nil (payday (parse-timestring "2012-11-29")))))
+
+(define-test no-pay-with-zero-timecards
+  (let ((*db* (make-instance 'memory-db)))
+    (change-hourly 12.5)
+    (let ((pc (payday (parse-timestring "2001-11-9"))))
+      (assert-equality #'timestamp=
+                       (start-date pc)
+                       (parse-timestring "2001-11-05"))
+      (assert-equalp 0 (gross-pay pc))
+      (assert-equalp 0 (deductions pc))
+      (assert-equalp 0 (net-pay pc)))))
+
+(define-test pay-with-one-time-card
+  (let ((*db* (make-instance 'memory-db))
+        (pay-date (parse-timestring "2001-11-09")))
+    (change-hourly 12.5)
+    (add-timecard pay-date 2.0)
+    (let ((pc (payday pay-date)))
+      (assert-equal 25.0 (gross-pay pc))
+      (assert-equal 25.0 (net-pay pc)))))
+
+(define-test pay-for-over-time
+  (let ((*db* (make-instance 'memory-db))
+        (pay-date (parse-timestring "2001-11-09")))
+    (change-hourly 15.25)
+    (add-timecard pay-date 9.0)
+    (assert-equal (* (+ 8 1.5)
+                     15.25)
+                  (gross-pay (payday pay-date)))))
+
+(define-test no-pay-on-wrong-date-for-hourly-employee
+  (let ((*db* (make-instance 'memory-db))
+        (wrong-date (parse-timestring "2001-11-08")))
+    (change-hourly 15.25)
+    (add-timecard wrong-date 9.0)
+    (assert-eq nil (payday wrong-date))))
+
+(define-test pay-with-two-time-cards
+  (let ((*db* (make-instance 'memory-db))
+        (pay-date (parse-timestring "2001-11-09")))
+    (change-hourly 12.5)
+    (add-timecard pay-date 2.0)
+    (add-timecard (timestamp- pay-date 1 :day) 8.0)
+    (let ((pc (payday pay-date)))
+      (assert-equalp 125.0 (gross-pay pc))
+      (assert-equalp 125.0 (net-pay pc)))))
+
+(define-test pay-only-one-period
+  (let ((*db* (make-instance 'memory-db))
+        (pay-date (parse-timestring "2001-11-09")))
+    (change-hourly 12.5)
+    (add-timecard pay-date 2.0)
+    (add-timecard (timestamp- pay-date 7 :day) 8.0)
+    (add-timecard (timestamp+ pay-date 1 :day) 8.0)
+    (let ((pc (payday pay-date)))
+      (assert-equalp 25.0 (gross-pay pc))
+      (assert-equalp 25.0 (net-pay pc)))))
 
 (let ((*print-failures* t)
       (*print-errors* t))
