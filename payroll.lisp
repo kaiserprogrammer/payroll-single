@@ -17,10 +17,18 @@
    (hours :initarg :hours
           :reader hours)))
 
+(defclass service-charge ()
+  ((date :initarg :date
+         :accessor date)
+   (charge :initarg :charge
+           :accessor charge)))
+
 (defclass no-affiliation () ())
 (defclass affiliation ()
   ((dues :initarg :dues
-         :accessor dues)))
+         :accessor dues)
+   (charges :initform (list)
+            :accessor charges)))
 
 (defclass memory-db ()
   ((classification :accessor classification)
@@ -89,6 +97,15 @@
 
 (defun change-unaffiliated (&optional (db *db*))
   (db-change-affiliation (make-instance 'no-affiliation) db))
+
+(defun add-service-charge (date charge &optional (db *db*))
+  (db-add-service-charge (make-instance 'service-charge
+                                        :date date
+                                        :charge charge)
+                         db))
+
+(defmethod db-add-service-charge (sc (db memory-db))
+  (push (cons (date sc) sc) (charges (affiliation db))))
 
 (defmethod db-change-affiliation (af (db memory-db))
   (setf (affiliation db) af))
@@ -182,6 +199,16 @@
     (change-unaffiliated)
     (assert-eql 'payroll::no-affiliation
                 (class-name (class-of (affiliation *db*))))))
+
+(define-test adding-a-service-charge
+  (let ((*db* (make-instance 'memory-db))
+        (date (local-time:parse-timestring "2012-12-31")))
+    (change-union-member 10.0)
+    (add-service-charge date 12.95)
+    (let ((sc (cdr (assoc date (charges (affiliation *db*)) :test #'local-time:timestamp=))))
+      (assert-true sc)
+      (assert-equal 12.95 (charge sc))
+      (assert-equality #'local-time:timestamp= date (date sc)))))
 
 (let ((*print-failures* t)
       (*print-errors* t))
